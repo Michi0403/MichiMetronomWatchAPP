@@ -1,0 +1,19 @@
+.gitignore
+Build.ps1
+LICENSE
+MichiMetronomeWatch/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+MichiMetronomeWatch/Assets.xcassets/AppIcon.appiconset/Contents.json
+MichiMetronomeWatch/Assets.xcassets/Contents.json
+MichiMetronomeWatch/ClickAudioEngine.swift
+MichiMetronomeWatch/ContentView.swift
+MichiMetronomeWatch/Info.plist
+MichiMetronomeWatch/MetronomeEngine.swift
+MichiMetronomeWatch/MetronomeSettings.swift
+MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/project.pbxproj
+MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/xcshareddata/xcschemes/MichiMetronome Watch.xcscheme
+MichiMetronomeWatch/MichiMetronomeWatchApp.swift
+PATCH-NOTES.md
+README.md
+SOURCE-MANIFEST.txt
+Validate.ps1
