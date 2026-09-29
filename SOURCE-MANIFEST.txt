@@ -15,19 +15,6 @@ MichiMetronome/MichiMetronome Watch App/PrivacyInfo.xcprivacy
 MichiMetronome/MichiMetronome.xcodeproj/project.pbxproj
 MichiMetronome/MichiMetronome.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 MichiMetronome/MichiMetronomeWatch-Info.plist
-MichiMetronomeWatch/Assets.xcassets/AppIcon.appiconset/AppIcon.png
-MichiMetronomeWatch/Assets.xcassets/AppIcon.appiconset/Contents.json
-MichiMetronomeWatch/Assets.xcassets/Contents.json
-MichiMetronomeWatch/ClickAudioEngine.swift
-MichiMetronomeWatch/ContentView.swift
-MichiMetronomeWatch/Info.plist
-MichiMetronomeWatch/MetronomeEngine.swift
-MichiMetronomeWatch/MetronomeSettings.swift
-MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/project.pbxproj
-MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/project.xcworkspace/contents.xcworkspacedata
-MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/xcshareddata/xcschemes/MichiMetronome Watch.xcscheme
-MichiMetronomeWatch/MichiMetronomeWatchApp.swift
-MichiMetronomeWatch/PrivacyInfo.xcprivacy
 PATCH-NOTES-1.3.0.md
 PATCH-NOTES-1.3.1.md
 PATCH-NOTES-1.4.0.md
@@ -41,6 +28,7 @@ PATCH-NOTES-1.7.0.md
 PATCH-NOTES-1.7.1.md
 PATCH-NOTES-1.8.0.md
 PATCH-NOTES-1.8.1.md
+PATCH-NOTES-1.8.2.md
 PATCH-NOTES.md
 README.md
 SOURCE-MANIFEST.txt

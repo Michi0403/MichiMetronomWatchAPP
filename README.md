@@ -58,6 +58,10 @@ Minimum deployment target: watchOS 26.0.
 
 ### Manual rhythm
 
+Fast melody capture uses a short onset refractory period and keeps a detected
+pitch change pending until it is actually committed as a rhythm event.
+
+
 Two independent recording paths remain available:
 
 - **Tap** records exact finger-tap spacing.
@@ -148,3 +152,21 @@ TESTFLIGHT.md
 Build.ps1
 Validate.ps1
 ```
+
+
+## Xcode 26.6 development vs distribution schemes
+
+For ordinary Watch testing, select:
+
+`MichiMetronome Watch App`
+
+and run on the physical Apple Watch.
+
+Do not run the root `MichiMetronome` distribution-container scheme on the Watch
+as the normal development scheme. That root target is an Apple-generated
+iPhoneOS packaging stub used to embed the Watch app for App Store Connect.
+
+For TestFlight/archive, switch to the root `MichiMetronome` scheme and use the
+generic distribution/archive destination Xcode offers. A UIKit `UIScene`
+configuration should not be added to the Watch app merely to silence a container
+runtime log.

@@ -204,6 +204,12 @@ actor ClickAudioEngine {
             buffer = generated
         }
 
+        enqueuePreviewBuffer(buffer)
+    }
+
+    private func enqueuePreviewBuffer(
+        _ buffer: AVAudioPCMBuffer
+    ) {
         player.scheduleBuffer(
             buffer,
             at: nil,
@@ -228,15 +234,23 @@ actor ClickAudioEngine {
         }
     }
 
-    func deactivate() {
+    func deactivate() async {
         player.stop()
         engine.stop()
         prepared = false
 
-        try? AVAudioSession.sharedInstance().setActive(
-            false,
-            options: [.notifyOthersOnDeactivation]
-        )
+        do {
+            _ = try await AVAudioSession
+                .sharedInstance()
+                .deactivate(
+                    options: [
+                        .notifyOthersOnDeactivation
+                    ]
+                )
+        } catch {
+            // Session may already be inactive. The next activation path
+            // reports a real error if the route is unavailable.
+        }
     }
 
     private static func makeNoteBuffer(

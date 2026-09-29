@@ -5,7 +5,7 @@ import Foundation
 import UserNotifications
 import WatchKit
 
-private final class HapticOutput: @unchecked Sendable {
+private nonisolated final class HapticOutput: @unchecked Sendable {
     private let queue = DispatchQueue(
         label: "com.michi0403.michimetronome.haptics",
         qos: .userInteractive
@@ -64,7 +64,7 @@ private final class HapticOutput: @unchecked Sendable {
 }
 
 
-private struct MicrophoneFrame: Sendable {
+private nonisolated struct MicrophoneFrame: Sendable {
     let timestamp: TimeInterval
     let rms: Double
     let frequency: Double?
@@ -75,10 +75,11 @@ private struct MicrophoneFrame: Sendable {
     let onset: Bool
 }
 
-private enum MicrophoneCaptureError: LocalizedError {
+private nonisolated enum MicrophoneCaptureError: LocalizedError {
     case permissionDenied
     case noInput
     case startFailed(String)
+    case activationFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -88,11 +89,13 @@ private enum MicrophoneCaptureError: LocalizedError {
             "No usable microphone input is available."
         case .startFailed(let message):
             "Microphone could not start: \(message)"
+        case .activationFailed(let message):
+            "Microphone audio session could not activate: \(message)"
         }
     }
 }
 
-private final class MicrophoneAnalyzer: @unchecked Sendable {
+private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
     typealias FrameHandler =
         @Sendable (MicrophoneFrame) -> Void
 
@@ -113,12 +116,14 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
 
     private var engine: AVAudioEngine?
     private var running = false
+    private var starting = false
 
     // Analysis state lives only on analysisQueue.
     private var smoothedRMS = 0.0
     private var previousRMS = 0.0
     private var lastOnsetTime = -Double.infinity
-    private var lastMidiValue: Double?
+    private var lastTrackedMidiValue: Double?
+    private var lastEmittedMidiNote: Int?
     private var lastAnalysisTime = -Double.infinity
 
     func start(
@@ -137,6 +142,12 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
                 return
             }
 
+            guard !self.starting else {
+                return
+            }
+
+            self.starting = true
+
             AVAudioApplication
                 .requestRecordPermission {
                     [weak self] granted in
@@ -147,6 +158,8 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
 
                     self.controlQueue.async {
                         guard granted else {
+                            self.starting = false
+
                             DispatchQueue.main.async {
                                 completion(
                                     .failure(
@@ -158,19 +171,93 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
                             return
                         }
 
-                        do {
-                            try self.startEngine(
-                                onFrame: onFrame
-                            )
+                        let session =
+                            AVAudioSession.sharedInstance()
 
-                            DispatchQueue.main.async {
-                                completion(.success(()))
-                            }
+                        do {
+                            // Keep recording isolated from Watch speaker output.
+                            // The metronome playback session is explicitly
+                            // deactivated before this path starts.
+                            try session.setCategory(
+                                .record,
+                                mode: .measurement,
+                                options: []
+                            )
                         } catch {
+                            self.starting = false
+
                             DispatchQueue.main.async {
                                 completion(
                                     .failure(error)
                                 )
+                            }
+                            return
+                        }
+
+                        // watchOS has a dedicated asynchronous activation path.
+                        // Waiting for the actual activation result avoids the
+                        // playback->record priority race seen on second use.
+                        session.activate {
+                            [weak self]
+                            activated,
+                            activationError in
+
+                            guard let self else {
+                                return
+                            }
+
+                            self.controlQueue.async {
+                                guard
+                                    activated,
+                                    activationError == nil
+                                else {
+                                    self.starting = false
+
+                                    let message =
+                                        activationError?
+                                            .localizedDescription
+                                        ?? "The audio session was not activated."
+
+                                    DispatchQueue.main.async {
+                                        completion(
+                                            .failure(
+                                                MicrophoneCaptureError
+                                                    .activationFailed(
+                                                        message
+                                                    )
+                                            )
+                                        )
+                                    }
+                                    return
+                                }
+
+                                do {
+                                    try self.startEngine(
+                                        onFrame: onFrame
+                                    )
+
+                                    self.running = true
+                                    self.starting = false
+
+                                    DispatchQueue.main.async {
+                                        completion(
+                                            .success(())
+                                        )
+                                    }
+                                } catch {
+                                    self.running = false
+                                    self.starting = false
+
+                                    session.deactivate {
+                                        _, _ in
+                                    }
+
+                                    DispatchQueue.main.async {
+                                        completion(
+                                            .failure(error)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -186,31 +273,47 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
                 return
             }
 
+            self.starting = false
+
             if let engine = self.engine {
                 engine.inputNode.removeTap(
                     onBus: 0
                 )
                 engine.stop()
+                engine.reset()
             }
 
             self.engine = nil
             self.running = false
 
-            try? AVAudioSession.sharedInstance()
-                .setActive(
-                    false,
-                    options: [
-                        .notifyOthersOnDeactivation
-                    ]
-                )
-
             self.analysisQueue.async {
                 self.resetAnalysisState()
             }
 
-            if let completion {
-                DispatchQueue.main.async {
-                    completion()
+            let session =
+                AVAudioSession.sharedInstance()
+
+            session.deactivate(
+                options: [
+                    .notifyOthersOnDeactivation
+                ]
+            ) {
+                [weak self]
+                _,
+                _ in
+
+                guard let self else {
+                    return
+                }
+
+                self.controlQueue.asyncAfter(
+                    deadline: .now() + 0.04
+                ) {
+                    if let completion {
+                        DispatchQueue.main.async {
+                            completion()
+                        }
+                    }
                 }
             }
         }
@@ -221,14 +324,6 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
     ) throws {
         let session =
             AVAudioSession.sharedInstance()
-
-        try session.setCategory(
-            .record,
-            mode: .measurement,
-            options: []
-        )
-
-        try session.setActive(true)
 
         let audioEngine = AVAudioEngine()
         let input = audioEngine.inputNode
@@ -248,7 +343,7 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
 
         input.installTap(
             onBus: 0,
-            bufferSize: 2048,
+            bufferSize: 1024,
             format: format
         ) {
             [weak self] buffer, _ in
@@ -287,7 +382,7 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
                 guard
                     timestamp
                         - self.lastAnalysisTime
-                        >= 0.045
+                        >= 0.020
                 else {
                     return
                 }
@@ -322,14 +417,14 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
         }
 
         engine = audioEngine
-        running = true
     }
 
     private func resetAnalysisState() {
         smoothedRMS = 0
         previousRMS = 0
         lastOnsetTime = -Double.infinity
-        lastMidiValue = nil
+        lastTrackedMidiValue = nil
+        lastEmittedMidiNote = nil
         lastAnalysisTime = -Double.infinity
     }
 
@@ -435,60 +530,84 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
         let previousEnvelope =
             max(
                 smoothedRMS,
-                0.002
+                0.0015
             )
 
         smoothedRMS =
-            smoothedRMS * 0.90
-            + rms * 0.10
+            smoothedRMS * 0.86
+            + rms * 0.14
+
+        let confidentPitch =
+            midiNote != nil
+            && pitch.confidence >= 0.50
+            && rms >= 0.008
 
         let amplitudeAttack =
-            rms > 0.012
+            rms >= 0.009
             && rms
                 > max(
-                    previousRMS * 1.45,
-                    previousEnvelope * 1.55
+                    previousRMS * 1.28,
+                    previousEnvelope * 1.35
                 )
 
+        // Compare against the last note that was actually EMITTED as an onset,
+        // not merely the most recently displayed tuner value.
+        //
+        // This is important for fast playing: if a pitch changes during the
+        // short refractory window, the change remains pending until it can be
+        // accepted instead of disappearing on the next analysis frame.
         let noteChange: Bool
 
         if
+            confidentPitch,
+            let midiNote,
             let midiValue,
-            let lastMidiValue
+            let lastEmittedMidiNote
         {
             noteChange =
-                abs(
+                midiNote != lastEmittedMidiNote
+                && abs(
                     midiValue
-                    - lastMidiValue
-                ) >= 0.80
-                && rms > 0.012
-                && pitch.confidence >= 0.58
+                    - Double(lastEmittedMidiNote)
+                ) >= 0.60
         } else {
             noteChange = false
         }
 
+        let firstConfidentNote =
+            confidentPitch
+            && lastEmittedMidiNote == nil
+
+        // 65 ms still rejects duplicate flutter, but permits roughly
+        // 15 note attacks per second when the pitch detector can resolve them.
         let enoughGap =
             timestamp
             - lastOnsetTime
-            >= 0.12
+            >= 0.065
 
         let onset =
             enoughGap
             && (
-                amplitudeAttack
+                firstConfidentNote
+                || amplitudeAttack
                 || noteChange
             )
 
         if onset {
             lastOnsetTime =
                 timestamp
+
+            if let midiNote {
+                lastEmittedMidiNote =
+                    midiNote
+            }
         }
 
         if
             let midiValue,
-            pitch.confidence >= 0.52
+            pitch.confidence >= 0.48
         {
-            lastMidiValue =
+            lastTrackedMidiValue =
                 midiValue
         }
 
@@ -624,7 +743,7 @@ private final class MicrophoneAnalyzer: @unchecked Sendable {
     }
 }
 
-private enum MusicalClock {
+private nonisolated enum MusicalClock {
     // A MIDI-style musical resolution. We intentionally keep this internal
     // instead of depending on CoreMIDI/AVAudioSequencer, because Apple's
     // MIDI instrument/sequencer playback APIs are unavailable on watchOS.
@@ -651,7 +770,7 @@ private enum MusicalClock {
     }
 }
 
-private struct PlaybackPlan: Sendable {
+private nonisolated struct PlaybackPlan: Sendable {
     let mode: MetronomeMode
     let bpm: Double
     let beatsPerBar: Int
@@ -1549,46 +1668,42 @@ final class MetronomeEngine: ObservableObject {
         microphoneOnsetCount = 0
         clearDetectedPitch()
 
-        Task { [weak self] in
-            guard let self else {
-                return
-            }
+        let owner = self
 
-            await self.audio.deactivate()
+        Task { @MainActor in
+            await owner.audio.deactivate()
 
-            self.microphone.start(
-                onFrame: {
-                    [weak self] frame in
+            // Give watchOS a tiny route/session transition window after
+            // playback deactivation before asking for record priority.
+            try? await Task.sleep(
+                nanoseconds: 60_000_000
+            )
 
+            owner.microphone.start(
+                onFrame: { frame in
                     Task { @MainActor in
-                        self?.handleMicrophoneFrame(
+                        owner.handleMicrophoneFrame(
                             frame,
                             recordingPattern: true
                         )
                     }
                 },
-                completion: {
-                    [weak self] result in
-
+                completion: { result in
                     Task { @MainActor in
-                        guard let self else {
-                            return
-                        }
-
-                        self.isPreparingMicrophone =
+                        owner.isPreparingMicrophone =
                             false
 
                         if case
                             .failure(let error)
                             = result
                         {
-                            self.isRecordingMicrophonePattern =
+                            owner.isRecordingMicrophonePattern =
                                 false
-                            self.microphoneError =
+                            owner.microphoneError =
                                 error.localizedDescription
 
-                            if self.settings.audioEnabled {
-                                self.prepareForUse()
+                            if owner.settings.audioEnabled {
+                                owner.prepareForUse()
                             }
                         }
                     }
@@ -1607,18 +1722,14 @@ final class MetronomeEngine: ObservableObject {
         isPreparingMicrophone = false
         isRecordingMicrophonePattern = false
 
+        let owner = self
+
         microphone.stop {
-            [weak self] in
-
             Task { @MainActor in
-                guard let self else {
-                    return
-                }
+                owner.commitMicrophonePattern()
 
-                self.commitMicrophonePattern()
-
-                if self.settings.audioEnabled {
-                    self.prepareForUse()
+                if owner.settings.audioEnabled {
+                    owner.prepareForUse()
                 }
             }
         }
@@ -1638,16 +1749,12 @@ final class MetronomeEngine: ObservableObject {
         microphoneOnsetCount = 0
         clearDetectedPitch()
 
+        let owner = self
+
         microphone.stop {
-            [weak self] in
-
             Task { @MainActor in
-                guard let self else {
-                    return
-                }
-
-                if self.settings.audioEnabled {
-                    self.prepareForUse()
+                if owner.settings.audioEnabled {
+                    owner.prepareForUse()
                 }
             }
         }
@@ -1669,46 +1776,40 @@ final class MetronomeEngine: ObservableObject {
         microphoneError = nil
         clearDetectedPitch()
 
-        Task { [weak self] in
-            guard let self else {
-                return
-            }
+        let owner = self
 
-            await self.audio.deactivate()
+        Task { @MainActor in
+            await owner.audio.deactivate()
 
-            self.microphone.start(
-                onFrame: {
-                    [weak self] frame in
+            try? await Task.sleep(
+                nanoseconds: 60_000_000
+            )
 
+            owner.microphone.start(
+                onFrame: { frame in
                     Task { @MainActor in
-                        self?.handleMicrophoneFrame(
+                        owner.handleMicrophoneFrame(
                             frame,
                             recordingPattern: false
                         )
                     }
                 },
-                completion: {
-                    [weak self] result in
-
+                completion: { result in
                     Task { @MainActor in
-                        guard let self else {
-                            return
-                        }
-
-                        self.isPreparingMicrophone =
+                        owner.isPreparingMicrophone =
                             false
 
                         if case
                             .failure(let error)
                             = result
                         {
-                            self.isTunerActive =
+                            owner.isTunerActive =
                                 false
-                            self.microphoneError =
+                            owner.microphoneError =
                                 error.localizedDescription
 
-                            if self.settings.audioEnabled {
-                                self.prepareForUse()
+                            if owner.settings.audioEnabled {
+                                owner.prepareForUse()
                             }
                         }
                     }
@@ -1729,16 +1830,12 @@ final class MetronomeEngine: ObservableObject {
         isTunerActive = false
         clearDetectedPitch()
 
+        let owner = self
+
         microphone.stop {
-            [weak self] in
-
             Task { @MainActor in
-                guard let self else {
-                    return
-                }
-
-                if self.settings.audioEnabled {
-                    self.prepareForUse()
+                if owner.settings.audioEnabled {
+                    owner.prepareForUse()
                 }
             }
         }
