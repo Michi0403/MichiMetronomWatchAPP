@@ -14,11 +14,11 @@ Minimum onset spacing is now 65 ms instead of 120 ms.
 
 ## Repeat microphone/tuner use
 
-The playback -> microphone -> playback handoff now uses the asynchronous watchOS
-AVAudioSession activation/deactivation APIs.
+The playback -> microphone -> playback handoff uses asynchronous activation and
+Xcode-26.6-compatible synchronous deactivation with a route-settling delay.
 
 The app waits for playback deactivation before requesting microphone priority,
-and microphone completion waits for actual session deactivation before preparing
+and microphone completion waits briefly after session deactivation before preparing
 playback again. This addresses the `SessionCore ... '!pri'` priority race seen
 after the first microphone recording.
 

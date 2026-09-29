@@ -170,3 +170,18 @@ For TestFlight/archive, switch to the root `MichiMetronome` scheme and use the
 generic distribution/archive destination Xcode offers. A UIKit `UIScene`
 configuration should not be added to the Watch app merely to silence a container
 runtime log.
+
+
+## Runtime stability notes (1.8.4)
+
+- Mic/Tuner owns the shared AVAudioSession until it explicitly stops.
+- Foreground scene transitions never re-prepare playback during recording.
+- Manual melody intervals down to 60 ms are preserved.
+- Crown editors use explicit focus ownership.
+- Microphone analysis is bounded to one pending block.
+
+
+## UI correction (1.8.5)
+
+Native watchOS button styles are used again for recording/tuner controls.
+The 1.8.4 runtime/audio/Crown fixes remain in place.

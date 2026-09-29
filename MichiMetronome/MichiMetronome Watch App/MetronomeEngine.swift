@@ -114,6 +114,12 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
         qos: .userInitiated
     )
 
+    // Only one copied microphone block may wait for analysis at a time.
+    // This prevents a slow Watch CPU from building an unbounded queue of
+    // PCM arrays while the real-time audio callback keeps arriving.
+    private let analysisGate =
+        DispatchSemaphore(value: 1)
+
     private var engine: AVAudioEngine?
     private var running = false
     private var starting = false
@@ -248,9 +254,12 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                                     self.running = false
                                     self.starting = false
 
-                                    session.deactivate {
-                                        _, _ in
-                                    }
+                                    try? session.setActive(
+                                        false,
+                                        options: [
+                                            .notifyOthersOnDeactivation
+                                        ]
+                                    )
 
                                     DispatchQueue.main.async {
                                         completion(
@@ -293,26 +302,21 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
             let session =
                 AVAudioSession.sharedInstance()
 
-            session.deactivate(
+            try? session.setActive(
+                false,
                 options: [
                     .notifyOthersOnDeactivation
                 ]
+            )
+
+            // Xcode 26.6 deactivation is synchronous. Give watchOS a short
+            // route/priority handoff window before playback is prepared again.
+            self.controlQueue.asyncAfter(
+                deadline: .now() + 0.06
             ) {
-                [weak self]
-                _,
-                _ in
-
-                guard let self else {
-                    return
-                }
-
-                self.controlQueue.asyncAfter(
-                    deadline: .now() + 0.04
-                ) {
-                    if let completion {
-                        DispatchQueue.main.async {
-                            completion()
-                        }
+                if let completion {
+                    DispatchQueue.main.async {
+                        completion()
                     }
                 }
             }
@@ -322,9 +326,6 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
     private func startEngine(
         onFrame: @escaping FrameHandler
     ) throws {
-        let session =
-            AVAudioSession.sharedInstance()
-
         let audioEngine = AVAudioEngine()
         let input = audioEngine.inputNode
         let format =
@@ -363,6 +364,17 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                 return
             }
 
+            // Never let analysis work queue up behind the real-time tap.
+            // If the previous block is still being processed, drop this block
+            // rather than increasing latency and eventually hanging the UI.
+            guard
+                self.analysisGate.wait(
+                    timeout: .now()
+                ) == .success
+            else {
+                return
+            }
+
             // Copy immediately off the audio callback's temporary buffer.
             let samples = Array(
                 UnsafeBufferPointer(
@@ -379,10 +391,14 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                 format.sampleRate
 
             self.analysisQueue.async {
+                defer {
+                    self.analysisGate.signal()
+                }
+
                 guard
                     timestamp
                         - self.lastAnalysisTime
-                        >= 0.020
+                        >= 0.018
                 else {
                     return
                 }
@@ -867,10 +883,10 @@ private nonisolated struct PlaybackPlan: Sendable {
                 ]
 
             return min(
-                0.40,
+                0.35,
                 max(
-                    0.065,
-                    interval * 0.62
+                    0.035,
+                    interval * 0.52
                 )
             )
         }
@@ -1096,6 +1112,10 @@ final class MetronomeEngine: ObservableObject {
     }
 
     var canStart: Bool {
+        guard !microphoneOwnsAudioSession else {
+            return false
+        }
+
         switch settings.mode {
         case .bpm:
             return true
@@ -1194,8 +1214,17 @@ final class MetronomeEngine: ObservableObject {
         )
     }
 
+    private var microphoneOwnsAudioSession: Bool {
+        isPreparingMicrophone
+            || isRecordingMicrophonePattern
+            || isTunerActive
+    }
+
     func prepareForUse() {
-        guard settings.audioEnabled else {
+        guard
+            settings.audioEnabled,
+            !microphoneOwnsAudioSession
+        else {
             return
         }
 
@@ -1254,6 +1283,7 @@ final class MetronomeEngine: ObservableObject {
         guard
             !isRunning,
             !isPreparing,
+            !microphoneOwnsAudioSession,
             canStart
         else {
             return
@@ -1442,7 +1472,10 @@ final class MetronomeEngine: ObservableObject {
             value.audioEnabled = enabled
         }
 
-        if enabled {
+        if
+            enabled,
+            !microphoneOwnsAudioSession
+        {
             prepareForUse()
         }
 
@@ -1993,6 +2026,13 @@ final class MetronomeEngine: ObservableObject {
 
     func becameActive() {
         clearStatusNotifications()
+
+        // watchOS 26 can emit additional active/inactive transitions while
+        // views and audio routes are changing. Never reconfigure the shared
+        // AVAudioSession for playback while microphone recording/tuning owns it.
+        guard !microphoneOwnsAudioSession else {
+            return
+        }
 
         if settings.audioEnabled {
             prepareForUse()

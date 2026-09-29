@@ -111,7 +111,7 @@ actor ClickAudioEngine {
         }
 
         let note = min(max(midiNote, 0), 127)
-        let noteDuration = min(max(duration, 0.045), 0.45)
+        let noteDuration = min(max(duration, 0.030), 0.45)
         let frameCount = max(
             1,
             Int(sourceFormat.sampleRate * noteDuration)
@@ -237,20 +237,30 @@ actor ClickAudioEngine {
     func deactivate() async {
         player.stop()
         engine.stop()
+        engine.reset()
         prepared = false
 
+        let session =
+            AVAudioSession.sharedInstance()
+
         do {
-            _ = try await AVAudioSession
-                .sharedInstance()
-                .deactivate(
-                    options: [
-                        .notifyOthersOnDeactivation
-                    ]
-                )
+            try session.setActive(
+                false,
+                options: [
+                    .notifyOthersOnDeactivation
+                ]
+            )
         } catch {
-            // Session may already be inactive. The next activation path
-            // reports a real error if the route is unavailable.
+            // The session can already be inactive, or watchOS can still be
+            // finishing a route change. The next activation path reports a
+            // real failure if the route is unavailable.
         }
+
+        // Xcode 26.6 doesn't expose AVAudioSession.deactivate(...).
+        // Give watchOS a short route handoff window before Mic activation.
+        try? await Task.sleep(
+            nanoseconds: 60_000_000
+        )
     }
 
     private static func makeNoteBuffer(

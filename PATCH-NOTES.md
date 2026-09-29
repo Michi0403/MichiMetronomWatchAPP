@@ -1,3 +1,136 @@
+# MichiMetronome 1.8.5 — UI regression correction
+
+This is a targeted correction to 1.8.4, not a rollback.
+
+## Native Watch buttons restored
+
+The custom `WatchFilledButtonStyle` and `WatchOutlineButtonStyle` introduced in
+1.8.4 were removed. They made button backgrounds collapse to the text label on
+the physical Watch and made the expected touch targets unclear.
+
+The following controls are back on the native watchOS button styles that were
+already working correctly:
+
+- BPM / Manual mode buttons;
+- Tempo Done;
+- manual TAP / Cancel / Use;
+- microphone Cancel / Use;
+- Tuner Start/Stop / Done;
+- Base Note Done.
+
+## Start button during Mic/Tuner
+
+The engine already prevented playback from starting while Mic/Tuner owned the
+shared audio session. However `canStart` still reported true, so the green Start
+button looked active even though the engine intentionally ignored it.
+
+`canStart` now returns false while the microphone owns the audio session, and the
+custom Start/Stop control visibly dims when disabled.
+
+## Kept from 1.8.4
+
+The fixes that address the actual runtime problems remain unchanged:
+
+- playback does not steal AVAudioSession during Mic/Tuner;
+- watchOS foreground transitions cannot cut off recording;
+- microphone analysis queue is bounded;
+- fast rhythm intervals down to 60 ms are preserved;
+- Crown editors use explicit FocusState;
+- Start/Stop no longer dynamically swaps SF Symbols;
+- the unused AVAudioSession warning remains fixed.
+
+No Xcode project settings were changed.
+
+
+---
+
+# MichiMetronome 1.8.4 — Watch runtime stability
+
+## Recording cut-off / audio-session ownership
+
+`becameActive()` and `prepareForUse()` no longer prepare the playback audio
+session while Mic recording or the Tuner owns the shared AVAudioSession.
+
+This matters on watchOS 26 because scene activity can bounce during UI/audio
+transitions. A foreground callback must not change the category from `.record`
+back to `.playback` during a recording.
+
+The playback Start path is also blocked while a microphone session is active.
+
+## Fast melody recording
+
+The persisted manual interval floor is now 60 ms instead of 120 ms. The previous
+120 ms normalization silently stretched fast notes even though the onset detector
+could already identify them faster.
+
+Manual synthesized note duration is also shorter for fast patterns so adjacent
+notes do not crowd each other.
+
+## Microphone analysis queue
+
+Only one microphone PCM block may be waiting for analysis. If the Watch CPU is
+still analyzing the previous block, a later analysis block is dropped instead
+of building an ever-growing queue. This keeps pitch display latency bounded and
+reduces UI/audio hangs.
+
+## Digital Crown
+
+Tempo and Base Note editors now use explicit `FocusState`. Crown focus is assigned
+only after the modal view has mounted and is released when it disappears.
+
+This addresses the watchOS runtime diagnostic:
+
+    Crown Sequencer was set up without a view property.
+
+## CoreUI / SF Symbol cache mitigation
+
+The Start/Stop state icon no longer swaps between dynamic SF Symbols. It is drawn
+using SwiftUI shapes.
+
+The stateful recording/tuner controls also use plain custom SwiftUI button styles
+instead of themed bordered/prominent styles on those hot paths. This reduces
+CoreUI theme-store work during start/stop/record transitions.
+
+## Compiler warning
+
+Removed the unused `AVAudioSession` local from `MicrophoneAnalyzer.startEngine`.
+
+## Notes about system diagnostics
+
+Current Apple platform builds have reports of `fopen failed for data file`
+messages when SF Symbols change dynamically. 1.8.4 removes that dynamic symbol
+swap from the playback control. Remaining OS-originated CoreUI/cache diagnostics,
+if any, should be evaluated separately from application audio-session failures.
+
+
+---
+
+# MichiMetronome 1.8.3 — Xcode 26.6 audio-session compatibility
+
+Xcode 26.6 does not expose the newer asynchronous
+`AVAudioSession.deactivate(options:completionHandler:)` API.
+
+All session-deactivation paths now use:
+
+    try session.setActive(
+        false,
+        options: [.notifyOthersOnDeactivation]
+    )
+
+The app still stops/resets audio objects first and waits briefly for the Watch
+route/priority handoff before changing from playback to microphone or back.
+
+This fixes:
+
+    Value of type 'AVAudioSession' has no member 'deactivate'
+
+and the follow-on contextual `notifyOthersOnDeactivation` error.
+
+No musical timing or melody-detection behavior was changed from 1.8.2.
+
+
+---
+
 # MichiMetronome 1.8.2 — Watch audio-session + fast melody capture fix
 
 ## Fast note changes

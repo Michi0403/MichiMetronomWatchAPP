@@ -1,5 +1,31 @@
 import SwiftUI
 
+private struct PlayTriangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(
+            to: CGPoint(
+                x: rect.minX,
+                y: rect.minY
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.maxX,
+                y: rect.midY
+            )
+        )
+        path.addLine(
+            to: CGPoint(
+                x: rect.minX,
+                y: rect.maxY
+            )
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var engine: MetronomeEngine
     @State private var showSettings = false
@@ -204,13 +230,20 @@ struct ContentView: View {
                 if engine.isPreparing {
                     ProgressView()
                         .controlSize(.mini)
-                } else {
-                    Image(
-                        systemName:
-                            engine.isRunning
-                            ? "stop.fill"
-                            : "play.fill"
+                } else if engine.isRunning {
+                    RoundedRectangle(
+                        cornerRadius: 2
                     )
+                    .frame(
+                        width: 12,
+                        height: 12
+                    )
+                } else {
+                    PlayTriangle()
+                        .frame(
+                            width: 13,
+                            height: 14
+                        )
                 }
 
                 Text(
@@ -250,7 +283,11 @@ struct ContentView: View {
         .foregroundStyle(.black)
         .opacity(
             engine.isPreparing
-            ? 0.75
+            || (
+                !engine.isRunning
+                && !engine.canStart
+            )
+            ? 0.45
             : 1
         )
         .disabled(
@@ -410,6 +447,7 @@ private struct TempoCrownView: View {
     private var dismiss
 
     @State private var crownBPM = 120.0
+    @FocusState private var crownFocused: Bool
 
     var body: some View {
         VStack(spacing: 9) {
@@ -438,6 +476,7 @@ private struct TempoCrownView: View {
             }
             .frame(maxWidth: .infinity)
             .focusable()
+            .focused($crownFocused)
             .digitalCrownRotation(
                 $crownBPM,
                 from:
@@ -461,9 +500,17 @@ private struct TempoCrownView: View {
                     crownBPM = value
                 }
             }
-            .onAppear {
+            .task {
                 crownBPM =
                     engine.settings.bpm
+
+                // Wait until SwiftUI has attached this modal view before
+                // assigning Crown focus.
+                await Task.yield()
+                crownFocused = true
+            }
+            .onDisappear {
+                crownFocused = false
             }
 
             TempoStepGrid()
@@ -838,9 +885,7 @@ private struct ManualPanel: View {
                     engine
                         .finishMicrophoneRecording()
                 }
-                .buttonStyle(
-                    .borderedProminent
-                )
+                .buttonStyle(.borderedProminent)
                 .tint(.blue)
                 .frame(
                     maxWidth: .infinity,
@@ -1394,9 +1439,7 @@ private struct TunerView: View {
                         minHeight: 44
                     )
                 }
-                .buttonStyle(
-                    .borderedProminent
-                )
+                .buttonStyle(.borderedProminent)
                 .tint(
                     engine.isTunerActive
                     || engine
@@ -1420,6 +1463,10 @@ private struct TunerView: View {
             }
             .padding(.horizontal, 6)
         }
+        .interactiveDismissDisabled(
+            engine.isTunerActive
+            || engine.isPreparingMicrophone
+        )
         .onDisappear {
             if
                 engine.isTunerActive
@@ -1441,6 +1488,7 @@ private struct BaseNoteView: View {
     private var dismiss
 
     @State private var crownNote = 69.0
+    @FocusState private var crownFocused: Bool
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1473,6 +1521,7 @@ private struct BaseNoteView: View {
                 minHeight: 68
             )
             .focusable()
+            .focused($crownFocused)
             .digitalCrownRotation(
                 $crownNote,
                 from: 24,
@@ -1497,12 +1546,18 @@ private struct BaseNoteView: View {
                     crownNote = Double(value)
                 }
             }
-            .onAppear {
+            .task {
                 crownNote =
                     Double(
                         engine.settings
                             .baseMidiNote
                     )
+
+                await Task.yield()
+                crownFocused = true
+            }
+            .onDisappear {
+                crownFocused = false
             }
 
             HStack(spacing: 4) {

@@ -134,7 +134,7 @@ enum TimeSignature: String, Codable, CaseIterable, Hashable, Identifiable, Senda
 struct MetronomeSettings: Codable, Equatable, Sendable {
     static let minimumBPM = 30.0
     static let maximumBPM = 300.0
-    static let minimumManualInterval = 0.12
+    static let minimumManualInterval = 0.06
     static let maximumManualInterval = 4.0
 
     var bpm: Double = 120
