@@ -3,7 +3,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
-    [string]$TeamId = '',
+    [string]$TeamId = 'YS97976PCZ',
 
     [switch]$Simulator
 )
@@ -17,7 +17,7 @@ if (-not [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$project = Join-Path $root 'MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj'
+$project = Join-Path $root 'MichiMetronome/MichiMetronome.xcodeproj'
 $derived = Join-Path $root 'artifacts/DerivedData'
 
 & xcodebuild -version
@@ -25,19 +25,19 @@ if ($LASTEXITCODE -ne 0) {
     throw 'xcodebuild was not found. Install/select Xcode first.'
 }
 
+$sdk = if ($Simulator) { 'watchsimulator' } else { 'watchos' }
+
 $args = @(
     '-project', $project,
-    '-scheme', 'MichiMetronome Watch',
+    '-target', 'MichiMetronome Watch App',
     '-configuration', $Configuration,
-    '-derivedDataPath', $derived,
-    '-destination', $(if ($Simulator) {
-        'generic/platform=watchOS Simulator'
-    } else {
-        'generic/platform=watchOS'
-    })
+    '-sdk', $sdk,
+    '-derivedDataPath', $derived
 )
 
-if (-not $Simulator) {
+if ($Simulator) {
+    $args += 'CODE_SIGNING_ALLOWED=NO'
+} else {
     $args += '-allowProvisioningUpdates'
     if (-not [string]::IsNullOrWhiteSpace($TeamId)) {
         $args += "DEVELOPMENT_TEAM=$TeamId"
@@ -49,4 +49,4 @@ if ($LASTEXITCODE -ne 0) {
     throw 'watchOS build failed.'
 }
 
-Write-Host 'MichiMetronome watchOS build passed.' -ForegroundColor Green
+Write-Host 'MichiMetronome canonical watchOS build passed.' -ForegroundColor Green

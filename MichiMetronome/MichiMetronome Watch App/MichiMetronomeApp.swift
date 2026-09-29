@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MichiMetronomeWatchApp: App {
+struct MichiMetronomeApp: App {
     @StateObject private var engine = MetronomeEngine()
     @Environment(\.scenePhase) private var scenePhase
 

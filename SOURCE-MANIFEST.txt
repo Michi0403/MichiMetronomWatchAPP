@@ -1,6 +1,20 @@
 .gitignore
 Build.ps1
 LICENSE
+MIDI-ARCHITECTURE.md
+MichiMetronome/MichiMetronome Watch App/Assets.xcassets/AccentColor.colorset/Contents.json
+MichiMetronome/MichiMetronome Watch App/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+MichiMetronome/MichiMetronome Watch App/Assets.xcassets/AppIcon.appiconset/Contents.json
+MichiMetronome/MichiMetronome Watch App/Assets.xcassets/Contents.json
+MichiMetronome/MichiMetronome Watch App/ClickAudioEngine.swift
+MichiMetronome/MichiMetronome Watch App/ContentView.swift
+MichiMetronome/MichiMetronome Watch App/MetronomeEngine.swift
+MichiMetronome/MichiMetronome Watch App/MetronomeSettings.swift
+MichiMetronome/MichiMetronome Watch App/MichiMetronomeApp.swift
+MichiMetronome/MichiMetronome Watch App/PrivacyInfo.xcprivacy
+MichiMetronome/MichiMetronome.xcodeproj/project.pbxproj
+MichiMetronome/MichiMetronome.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+MichiMetronome/MichiMetronomeWatch-Info.plist
 MichiMetronomeWatch/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 MichiMetronomeWatch/Assets.xcassets/AppIcon.appiconset/Contents.json
 MichiMetronomeWatch/Assets.xcassets/Contents.json
@@ -13,7 +27,22 @@ MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/project.pbxproj
 MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 MichiMetronomeWatch/MichiMetronomeWatch.xcodeproj/xcshareddata/xcschemes/MichiMetronome Watch.xcscheme
 MichiMetronomeWatch/MichiMetronomeWatchApp.swift
+MichiMetronomeWatch/PrivacyInfo.xcprivacy
+PATCH-NOTES-1.3.0.md
+PATCH-NOTES-1.3.1.md
+PATCH-NOTES-1.4.0.md
+PATCH-NOTES-1.4.1.md
+PATCH-NOTES-1.4.2.md
+PATCH-NOTES-1.5.0.md
+PATCH-NOTES-1.5.1.md
+PATCH-NOTES-1.5.2.md
+PATCH-NOTES-1.6.0.md
+PATCH-NOTES-1.7.0.md
+PATCH-NOTES-1.7.1.md
+PATCH-NOTES-1.8.0.md
+PATCH-NOTES-1.8.1.md
 PATCH-NOTES.md
 README.md
 SOURCE-MANIFEST.txt
+TESTFLIGHT.md
 Validate.ps1
