@@ -216,3 +216,17 @@ uptime, note name, MIDI number, frequency, cents and estimator confidence.
 The legacy 32-event normalization cap has been removed. Manual/Mic patterns now
 support up to 8192 events. Mic commits print captured/saved counts to the Xcode
 console.
+
+
+## Pitch analysis performance (1.9.0)
+
+YIN lag correlations use Accelerate/vDSP rather than nested Swift loops.
+Mic stop prints `[MichiPitch] ANALYSIS_STATS` with analyzed/dropped frame counts
+and average/maximum analysis time.
+
+
+## Physical Watch microphone buffering (1.9.1)
+
+Delivered AVAudioEngine tap buffers are internally split into 1024-sample pitch
+analysis hops. Pitch-event resolution no longer depends on the hardware callback
+buffer size. UI pitch updates are throttled independently.

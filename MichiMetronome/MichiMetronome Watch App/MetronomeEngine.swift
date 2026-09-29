@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import Combine
 import Darwin
@@ -190,6 +191,19 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
     private var lastAnalysisTime = -Double.infinity
     private var analysisEpoch: TimeInterval?
 
+    // Per-recording analyzer telemetry. `droppedAnalysisBlocks` is updated by
+    // the audio tap while the other fields live on analysisQueue.
+    private var droppedAnalysisBlocks = 0
+    private var analyzedFrameCount = 0
+    private var analysisTotalDuration = 0.0
+    private var analysisMaximumDuration = 0.0
+
+    private var inputCallbackCount = 0
+    private var inputFrameTotal = 0
+    private var inputFrameMinimum = Int.max
+    private var inputFrameMaximum = 0
+    private var lastVisualFrameTime = -Double.infinity
+
     // Short blocks are good for onset latency, but not enough for reliable
     // fundamental detection. Keep a rolling window for pitch estimation.
     private var sampleHistory: [Float] = []
@@ -374,6 +388,51 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
             // Completion only fires after that block has had a chance to emit
             // its musical event.
             self.analysisQueue.async {
+                let averageMs =
+                    self.analyzedFrameCount > 0
+                    ? (
+                        self.analysisTotalDuration
+                        / Double(
+                            self.analyzedFrameCount
+                        )
+                    ) * 1_000.0
+                    : 0
+
+                let maximumMs =
+                    self.analysisMaximumDuration
+                    * 1_000.0
+
+                let averageInputFrames =
+                    self.inputCallbackCount > 0
+                    ? Double(
+                        self.inputFrameTotal
+                    )
+                        / Double(
+                            self.inputCallbackCount
+                        )
+                    : 0
+
+                let minimumInputFrames =
+                    self.inputFrameMinimum
+                        == Int.max
+                    ? 0
+                    : self.inputFrameMinimum
+
+                print(
+                    String(
+                        format:
+                            "[MichiPitch] ANALYSIS_STATS callbacks=%d inputFramesAvg=%.1f inputFramesMin=%d inputFramesMax=%d analyzed=%d dropped=%d avgMs=%.2f maxMs=%.2f",
+                        self.inputCallbackCount,
+                        averageInputFrames,
+                        minimumInputFrames,
+                        self.inputFrameMaximum,
+                        self.analyzedFrameCount,
+                        self.droppedAnalysisBlocks,
+                        averageMs,
+                        maximumMs
+                    )
+                )
+
                 self.resetAnalysisState()
 
                 self.controlQueue.asyncAfter(
@@ -393,6 +452,16 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
         onFrame: @escaping FrameHandler,
         onEvent: EventHandler?
     ) throws {
+        droppedAnalysisBlocks = 0
+        analyzedFrameCount = 0
+        analysisTotalDuration = 0
+        analysisMaximumDuration = 0
+        inputCallbackCount = 0
+        inputFrameTotal = 0
+        inputFrameMinimum = Int.max
+        inputFrameMaximum = 0
+        lastVisualFrameTime = -Double.infinity
+
         let audioEngine = AVAudioEngine()
         let input = audioEngine.inputNode
         let format =
@@ -404,6 +473,15 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
         else {
             throw MicrophoneCaptureError.noInput
         }
+
+        print(
+            String(
+                format:
+                    "[MichiPitch] MIC_FORMAT sampleRate=%.1f channels=%u requestedTapFrames=1024",
+                format.sampleRate,
+                format.channelCount
+            )
+        )
 
         analysisQueue.async {
             self.resetAnalysisState()
@@ -439,6 +517,7 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                     timeout: .now()
                 ) == .success
             else {
+                self.droppedAnalysisBlocks += 1
                 return
             }
 
@@ -462,45 +541,130 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                     self.analysisGate.signal()
                 }
 
-                guard
-                    timestamp
-                        - self.lastAnalysisTime
-                        >= 0.018
-                else {
-                    return
-                }
-
-                self.lastAnalysisTime =
-                    timestamp
-
-                let frame =
-                    self.analyze(
-                        samples: samples,
-                        sampleRate:
-                            sampleRate,
-                        timestamp:
-                            timestamp
+                self.inputCallbackCount += 1
+                self.inputFrameTotal +=
+                    samples.count
+                self.inputFrameMinimum =
+                    min(
+                        self.inputFrameMinimum,
+                        samples.count
+                    )
+                self.inputFrameMaximum =
+                    max(
+                        self.inputFrameMaximum,
+                        samples.count
                     )
 
-                // Commit the musical event on the analyzer queue before
-                // delivering the visual frame to MainActor. UI workload can
-                // therefore never make an accepted note disappear.
-                if
-                    frame.onset,
-                    let midiNote =
-                        frame.midiNote
-                {
-                    onEvent?(
-                        MicrophoneCapturedEvent(
-                            timestamp:
-                                frame.timestamp,
-                            midiNote:
-                                midiNote
+                // `bufferSize: 1024` is only a request. On physical Watch the
+                // audio system may deliver a much larger hardware I/O block.
+                // Process that block as 1024-sample hops so temporal pitch
+                // resolution is determined by audio samples, not callback rate.
+                let hopSize = 1_024
+
+                let callbackStartTimestamp =
+                    timestamp
+                    - Double(samples.count)
+                        / sampleRate
+
+                var offset = 0
+
+                while offset < samples.count {
+                    let end =
+                        min(
+                            offset + hopSize,
+                            samples.count
                         )
-                    )
-                }
 
-                onFrame(frame)
+                    let count =
+                        end - offset
+
+                    // Tiny callback tails add no useful pitch information.
+                    // Their samples are still represented by the timestamp
+                    // progression of the following callback.
+                    guard count >= 256 else {
+                        break
+                    }
+
+                    let frameTimestamp =
+                        callbackStartTimestamp
+                        + Double(end)
+                            / sampleRate
+
+                    if
+                        frameTimestamp
+                            - self.lastAnalysisTime
+                            >= 0.018
+                    {
+                        self.lastAnalysisTime =
+                            frameTimestamp
+
+                        let chunk =
+                            Array(
+                                samples[
+                                    offset..<end
+                                ]
+                            )
+
+                        let analysisStarted =
+                            ProcessInfo.processInfo
+                                .systemUptime
+
+                        let frame =
+                            self.analyze(
+                                samples: chunk,
+                                sampleRate:
+                                    sampleRate,
+                                timestamp:
+                                    frameTimestamp
+                            )
+
+                        let analysisDuration =
+                            ProcessInfo.processInfo
+                                .systemUptime
+                            - analysisStarted
+
+                        self.analyzedFrameCount += 1
+                        self.analysisTotalDuration +=
+                            analysisDuration
+                        self.analysisMaximumDuration =
+                            max(
+                                self.analysisMaximumDuration,
+                                analysisDuration
+                            )
+
+                        // Musical events are never UI-throttled.
+                        if
+                            frame.onset,
+                            let midiNote =
+                                frame.midiNote
+                        {
+                            onEvent?(
+                                MicrophoneCapturedEvent(
+                                    timestamp:
+                                        frame.timestamp,
+                                    midiNote:
+                                        midiNote
+                                )
+                            )
+                        }
+
+                        // The Watch display does not need a 40+ Hz pitch feed.
+                        // Onsets are delivered immediately; otherwise cap
+                        // visual updates around 16 Hz.
+                        if
+                            frame.onset
+                            || frameTimestamp
+                                - self.lastVisualFrameTime
+                                >= 0.060
+                        {
+                            self.lastVisualFrameTime =
+                                frameTimestamp
+                            onFrame(frame)
+                        }
+                    }
+
+                    offset = end
+                }
             }
         }
 
@@ -633,12 +797,15 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
             && pitch.confidence >= 0.68
             && rms >= 0.0035
 
+        // Piano/guitar re-attacks were previously almost invisible because
+        // both attack ratios were too strict. The refractory interval still
+        // prevents one physical attack from becoming several events.
         let amplitudeAttack =
-            rms >= 0.0045
+            rms >= 0.0038
             && rms
                 > max(
-                    previousRMS * 1.22,
-                    previousEnvelope * 1.28
+                    previousRMS * 1.10,
+                    previousEnvelope * 1.08
                 )
 
         let enoughGap =
@@ -689,8 +856,28 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                     candidateFrameCount = 1
                 }
 
+                let distance =
+                    displayedMidiNote.map {
+                        abs(
+                            rawMidiNote - $0
+                        )
+                    }
+                    ?? 0
+
+                let largeLeapIsPlausible =
+                    distance < 12
+                    || amplitudeAttack
+                    || pitch.confidence >= 0.88
+
+                // Internal 1024-sample hops are ~23 ms at 44.1 kHz, so
+                // two agreeing frames cost only ~46 ms and reject the
+                // one-frame octave/transient mistakes seen in the benchmark.
+                let requiredFrames = 2
+
                 if
-                    candidateFrameCount >= 2,
+                    candidateFrameCount
+                        >= requiredFrames,
+                    largeLeapIsPlausible,
                     enoughGap
                 {
                     displayedMidiNote =
@@ -843,107 +1030,166 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
         frequency: Double?,
         confidence: Double
     ) {
-        guard rms >= 0.0025 else {
+        guard
+            rms >= 0.0025,
+            sampleHistory.count >= 1_024
+        else {
             return (nil, 0)
         }
 
-        // 2048 samples (~46 ms @ 44.1 kHz) reacts quickly enough for melody.
-        // It is reliable for most voice/guitar/violin notes.
-        if sampleHistory.count >= 2_048 {
-            let shortWindow =
-                Array(
-                    sampleHistory
-                        .suffix(2_048)
-                )
+        // High and upper-mid notes need temporal resolution more than a long
+        // observation window. 1024 samples are ~23 ms at 44.1 kHz.
+        let fastEstimate =
+            estimatePitchYINAccelerated(
+                samples:
+                    Array(
+                        sampleHistory
+                            .suffix(1_024)
+                    ),
+                sampleRate:
+                    sampleRate,
+                minimumFrequency:
+                    110.0,
+                maximumFrequency:
+                    1_800.0
+            )
 
-            let shortEstimate =
-                estimatePitchYIN(
-                    samples:
-                        shortWindow,
-                    sampleRate:
-                        sampleRate,
-                    minimumFrequency:
-                        65.0,
-                    maximumFrequency:
-                        1_800.0
-                )
-
-            if
-                shortEstimate.frequency != nil,
-                shortEstimate.confidence
-                    >= 0.78
-            {
-                return shortEstimate
-            }
-
-            // For low notes or uncertain harmonic-rich signals, fall back to
-            // a 4096-sample window (~93 ms) when enough history exists.
-            if sampleHistory.count >= 4_096 {
-                let longEstimate =
-                    estimatePitchYIN(
-                        samples:
-                            sampleHistory,
-                        sampleRate:
-                            sampleRate,
-                        minimumFrequency:
-                            40.0,
-                        maximumFrequency:
-                            1_800.0
-                    )
-
-                if
-                    let shortFrequency =
-                        shortEstimate.frequency,
-                    let longFrequency =
-                        longEstimate.frequency
-                {
-                    let ratio =
-                        max(
-                            shortFrequency,
-                            longFrequency
-                        )
-                        / min(
-                            shortFrequency,
-                            longFrequency
-                        )
-
-                    // If the two windows disagree by almost exactly one octave
-                    // and the lower-frequency estimate is nearly as confident,
-                    // prefer the likely fundamental instead of the overtone.
-                    if
-                        ratio >= 1.90,
-                        ratio <= 2.10,
-                        longFrequency
-                            < shortFrequency,
-                        longEstimate.confidence
-                            >= shortEstimate.confidence
-                                - 0.05
-                    {
-                        return longEstimate
-                    }
-                }
-
-                if
-                    longEstimate.confidence
-                        > shortEstimate.confidence
-                            + 0.04
-                {
-                    return longEstimate
-                }
-            }
-
-            return shortEstimate
+        if
+            let fastFrequency =
+                fastEstimate.frequency,
+            fastFrequency >= 180.0,
+            fastEstimate.confidence >= 0.82
+        {
+            return fastEstimate
         }
 
-        return (nil, 0)
+        guard sampleHistory.count >= 2_048 else {
+            return fastEstimate
+        }
+
+        // Mid/low notes need several periods for stable identification.
+        let mediumEstimate =
+            estimatePitchYINAccelerated(
+                samples:
+                    Array(
+                        sampleHistory
+                            .suffix(2_048)
+                    ),
+                sampleRate:
+                    sampleRate,
+                minimumFrequency:
+                    65.0,
+                maximumFrequency:
+                    1_200.0
+            )
+
+        let provisional: (
+            frequency: Double?,
+            confidence: Double
+        )
+
+        if
+            mediumEstimate.confidence
+                >= fastEstimate.confidence
+                    - 0.03
+        {
+            provisional =
+                mediumEstimate
+        } else {
+            provisional =
+                fastEstimate
+        }
+
+        let provisionalFrequency =
+            provisional.frequency
+
+        // Low fundamentals are the difficult case: a short window may report
+        // their second harmonic with excellent confidence. For anything below
+        // ~220 Hz (or uncertain), explicitly compare a 4096-sample estimate.
+        let needsLongWindow =
+            sampleHistory.count >= 4_096
+            && (
+                provisionalFrequency == nil
+                || provisionalFrequency! < 220.0
+                || provisional.confidence < 0.80
+            )
+
+        guard needsLongWindow else {
+            return provisional
+        }
+
+        let longEstimate =
+            estimatePitchYINAccelerated(
+                samples:
+                    Array(
+                        sampleHistory
+                            .suffix(4_096)
+                    ),
+                sampleRate:
+                    sampleRate,
+                minimumFrequency:
+                    40.0,
+                maximumFrequency:
+                    600.0
+            )
+
+        guard
+            let longFrequency =
+                longEstimate.frequency
+        else {
+            return provisional
+        }
+
+        guard
+            let shortFrequency =
+                provisional.frequency
+        else {
+            return longEstimate
+        }
+
+        let ratio =
+            max(
+                shortFrequency,
+                longFrequency
+            )
+            / min(
+                shortFrequency,
+                longFrequency
+            )
+
+        // Prefer the lower estimate when the short window landed on a clean
+        // integer harmonic (2x/3x/4x) and the fundamental is nearly as strong.
+        let harmonicRatio =
+            (
+                abs(ratio - 2.0) <= 0.08
+                || abs(ratio - 3.0) <= 0.10
+                || abs(ratio - 4.0) <= 0.12
+            )
+
+        if
+            longFrequency < shortFrequency,
+            harmonicRatio,
+            longEstimate.confidence
+                >= provisional.confidence
+                    - 0.10
+        {
+            return longEstimate
+        }
+
+        if
+            longEstimate.confidence
+                > provisional.confidence
+                    + 0.035
+        {
+            return longEstimate
+        }
+
+        return provisional
     }
 
-    /// YIN-style fundamental estimator.
-    ///
-    /// Unlike "pick the strongest autocorrelation peak", YIN evaluates the
-    /// normalized difference function and searches for the first convincing
-    /// period minimum. This substantially reduces octave/harmonic mistakes.
-    private func estimatePitchYIN(
+    /// YIN-style estimator with the expensive lag dot-products delegated to
+    /// Accelerate/vDSP instead of nested Swift loops.
+    private func estimatePitchYINAccelerated(
         samples: [Float],
         sampleRate: Double,
         minimumFrequency: Double,
@@ -973,7 +1219,7 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
             sampleRate
             / Double(decimation)
 
-        var reduced: [Double] = []
+        var reduced: [Float] = []
         reduced.reserveCapacity(
             samples.count
                 / decimation + 1
@@ -981,8 +1227,6 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
 
         var sourceIndex = 0
 
-        // Average each decimation group instead of taking one sample. This
-        // cheap low-pass step reduces aliasing before YIN.
         while sourceIndex < samples.count {
             let end =
                 min(
@@ -991,16 +1235,15 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                     samples.count
                 )
 
-            var total = 0.0
+            var total: Float = 0
 
             for index in sourceIndex..<end {
-                total +=
-                    Double(samples[index])
+                total += samples[index]
             }
 
             reduced.append(
                 total
-                / Double(
+                / Float(
                     end - sourceIndex
                 )
             )
@@ -1012,13 +1255,28 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
             return (nil, 0)
         }
 
-        let mean =
-            reduced.reduce(0, +)
-            / Double(reduced.count)
+        var mean: Float = 0
+        vDSP_meanv(
+            reduced,
+            1,
+            &mean,
+            vDSP_Length(
+                reduced.count
+            )
+        )
 
-        for index in reduced.indices {
-            reduced[index] -= mean
-        }
+        var negativeMean = -mean
+
+        vDSP_vsadd(
+            reduced,
+            1,
+            &negativeMean,
+            &reduced,
+            1,
+            vDSP_Length(
+                reduced.count
+            )
+        )
 
         let minimumLag =
             max(
@@ -1057,6 +1315,31 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
             return (nil, 0)
         }
 
+        // Prefix energy lets each YIN difference value use one accelerated dot
+        // product plus O(1) energy lookups:
+        //
+        // Σ(x-y)^2 = Σx^2 + Σy^2 - 2Σxy
+        var energyPrefix =
+            Array(
+                repeating: 0.0,
+                count:
+                    reduced.count + 1
+            )
+
+        for index in reduced.indices {
+            let value =
+                Double(reduced[index])
+
+            energyPrefix[index + 1] =
+                energyPrefix[index]
+                + value * value
+        }
+
+        let firstEnergy =
+            energyPrefix[
+                comparisonCount
+            ]
+
         var difference =
             Array(
                 repeating: 0.0,
@@ -1064,21 +1347,43 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                     maximumLag + 1
             )
 
-        if maximumLag >= 1 {
+        reduced.withUnsafeBufferPointer {
+            buffer in
+
+            guard let base = buffer.baseAddress else {
+                return
+            }
+
             for lag in 1...maximumLag {
-                var sum = 0.0
+                var dot: Float = 0
 
-                for index in 0..<comparisonCount {
-                    let delta =
-                        reduced[index]
-                        - reduced[
-                            index + lag
-                        ]
+                vDSP_dotpr(
+                    base,
+                    1,
+                    base.advanced(
+                        by: lag
+                    ),
+                    1,
+                    &dot,
+                    vDSP_Length(
+                        comparisonCount
+                    )
+                )
 
-                    sum += delta * delta
-                }
+                let secondEnergy =
+                    energyPrefix[
+                        lag
+                        + comparisonCount
+                    ]
+                    - energyPrefix[lag]
 
-                difference[lag] = sum
+                difference[lag] =
+                    max(
+                        0,
+                        firstEnergy
+                        + secondEnergy
+                        - 2.0 * Double(dot)
+                    )
             }
         }
 
@@ -1091,22 +1396,18 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
 
         var runningSum = 0.0
 
-        if maximumLag >= 1 {
-            for lag in 1...maximumLag {
-                runningSum +=
-                    difference[lag]
+        for lag in 1...maximumLag {
+            runningSum +=
+                difference[lag]
 
-                if runningSum > 0 {
-                    normalized[lag] =
-                        difference[lag]
-                        * Double(lag)
-                        / runningSum
-                }
+            if runningSum > 0 {
+                normalized[lag] =
+                    difference[lag]
+                    * Double(lag)
+                    / runningSum
             }
         }
 
-        // Standard YIN behavior: choose the first convincing minimum rather
-        // than the globally strongest harmonic.
         let threshold = 0.18
         var selectedLag: Int?
 
@@ -1160,7 +1461,6 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
                 }
             }
 
-            // No sufficiently periodic signal.
             guard bestValue <= 0.34 else {
                 return (
                     nil,
@@ -1181,8 +1481,6 @@ private nonisolated final class MicrophoneAnalyzer: @unchecked Sendable {
         var refinedLag =
             Double(selectedLag)
 
-        // Parabolic interpolation gives sub-sample period resolution and makes
-        // cents display much less jumpy.
         if
             selectedLag > minimumLag,
             selectedLag < maximumLag
