@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "images": [
     {
       "filename": "AppIcon.png",
@@ -13,17 +12,3 @@
     "version": 1
   }
 }
-=======
-  "images" : [
-    {
-      "idiom" : "universal",
-      "platform" : "watchos",
-      "size" : "1024x1024"
-    }
-  ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
-  }
-}
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb

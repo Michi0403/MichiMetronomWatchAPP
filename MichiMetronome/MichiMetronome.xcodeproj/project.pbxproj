@@ -134,14 +134,11 @@
 					};
 					61686416306C449000231365 = {
 						CreatedOnToolsVersion = 26.6;
-<<<<<<< HEAD
 						SystemCapabilities = {
 							com.apple.BackgroundModes = {
 								enabled = 1;
 							};
 						};
-=======
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 					};
 				};
 			};
@@ -320,10 +317,7 @@
 		61686425306C449200231365 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-<<<<<<< HEAD
 				INFOPLIST_FILE = MichiMetronomeWatch-Info.plist;
-=======
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -331,24 +325,15 @@
 				DEVELOPMENT_TEAM = YS97976PCZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-<<<<<<< HEAD
 				INFOPLIST_KEY_CFBundleDisplayName = "Michi Metronome";
-=======
-				INFOPLIST_KEY_CFBundleDisplayName = MichiMetronome;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKWatchOnly = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-<<<<<<< HEAD
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.michimetronome.watchkitapp;
-=======
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.MichiMetronome.watchkitapp;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -359,21 +344,14 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-<<<<<<< HEAD
 				WATCHOS_DEPLOYMENT_TARGET = 26.0;
-=======
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 			};
 			name = Debug;
 		};
 		61686426306C449200231365 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-<<<<<<< HEAD
 				INFOPLIST_FILE = MichiMetronomeWatch-Info.plist;
-=======
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -381,24 +359,15 @@
 				DEVELOPMENT_TEAM = YS97976PCZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-<<<<<<< HEAD
 				INFOPLIST_KEY_CFBundleDisplayName = "Michi Metronome";
-=======
-				INFOPLIST_KEY_CFBundleDisplayName = MichiMetronome;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKWatchOnly = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-<<<<<<< HEAD
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.michimetronome.watchkitapp;
-=======
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.MichiMetronome.watchkitapp;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -410,11 +379,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				VALIDATE_PRODUCT = YES;
-<<<<<<< HEAD
 				WATCHOS_DEPLOYMENT_TARGET = 26.0;
-=======
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 			};
 			name = Release;
 		};
@@ -424,15 +389,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YS97976PCZ;
-<<<<<<< HEAD
 				INFOPLIST_KEY_CFBundleDisplayName = "Michi Metronome";
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.michimetronome;
-=======
-				INFOPLIST_KEY_CFBundleDisplayName = MichiMetronome;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.MichiMetronome;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -447,15 +406,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YS97976PCZ;
-<<<<<<< HEAD
 				INFOPLIST_KEY_CFBundleDisplayName = "Michi Metronome";
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.michimetronome;
-=======
-				INFOPLIST_KEY_CFBundleDisplayName = MichiMetronome;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.michi0403.MichiMetronome;
->>>>>>> 6243a46ca19444a29510c1d624538731ff550dbb
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
