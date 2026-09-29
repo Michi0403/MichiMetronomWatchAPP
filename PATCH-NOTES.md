@@ -1,3 +1,173 @@
+# MichiMetronome 1.8.9 — remove legacy 32-event pattern limit
+
+## Root cause
+
+`MetronomeSettings.normalize()` still contained the historical:
+
+    manualIntervals.prefix(32)
+
+That silently truncated any Tap or Mic pattern to 32 events when settings were
+normalized/saved.
+
+The microphone event store itself was not stopping at 32.
+
+## New limit
+
+The old 32-event cap is replaced with:
+
+    maximumManualEvents = 8192
+
+This is a defensive sanity ceiling rather than a practical musical restriction.
+
+At the minimum supported 60 ms event spacing, 8192 events represent more than
+8 minutes of continuous events. At normal beat spacings the possible recording
+length is much longer.
+
+## Commit diagnostics
+
+Mic pattern commit now logs:
+
+    [MichiPitch] PATTERN_COMMIT captured=230 saved=230 notes=230 cap=8192
+
+This makes any future truncation immediately visible.
+
+## Pitch detector
+
+No pitch thresholds, YIN behavior, button UI, Xcode target settings, or audio
+session behavior were changed in this revision.
+
+
+---
+
+# MichiMetronome 1.8.8 — pitch debug timeline
+
+No pitch thresholds or UI behavior were changed in this revision.
+
+Each accepted microphone musical event now prints one structured line to the
+Xcode console.
+
+Example:
+
+    [MichiPitch] CHANGE t=0.412s uptime=83451.224 note=E4 midi=64 freq=329.71Hz cents=+0.3 confidence=0.941
+    [MichiPitch] REATTACK t=0.688s uptime=83451.500 note=E4 midi=64 freq=329.56Hz cents=-0.5 confidence=0.928
+
+Fields:
+
+- `CHANGE`: stabilized MIDI note changed; display + recorder changed together.
+- `REATTACK`: a new articulation of the same displayed pitch.
+- `t`: seconds since the first analyzed microphone frame in that recording.
+- `uptime`: monotonic `ProcessInfo.systemUptime` timestamp.
+- `note`: scientific pitch name.
+- `midi`: MIDI note number.
+- `freq`: detected fundamental frequency.
+- `cents`: deviation from equal-tempered center of that MIDI note.
+- `confidence`: pitch-estimator confidence.
+
+Mic recordings also log:
+
+    [MichiPitch] RECORDING_BEGIN ...
+    [MichiPitch] RECORDING_END ... events=N
+
+This makes it possible to compare a known MIDI note sequence and timing against
+exactly what the Watch accepted.
+
+No Xcode project settings or button/layout code were changed.
+
+
+---
+
+# MichiMetronome 1.8.7 — tuner-grade pitch path + lossless Mic events
+
+## Pitch detector
+
+The old detector selected the strongest normalized autocorrelation peak from a
+single short block. That is vulnerable to harmonics and octave errors, especially
+for singing.
+
+1.8.7 replaces it with a YIN-style normalized difference estimator.
+
+Pitch analysis now uses a rolling signal window:
+
+- 2048 samples for responsive melody detection;
+- 4096-sample fallback for low notes and uncertain signals;
+- cheap averaging decimation to about 12 kHz;
+- cumulative-mean normalized difference;
+- first-threshold period selection instead of strongest harmonic;
+- parabolic lag interpolation for more stable frequency/cents;
+- octave sanity check between short and long windows.
+
+The supported analysis range is approximately 40 Hz to 1800 Hz.
+
+## Recording can no longer lose a displayed/accepted note because of UI load
+
+Accepted musical events are now committed on the analyzer's serial queue BEFORE
+the visual frame is delivered to SwiftUI/MainActor.
+
+A locked `MicrophoneEventStore` owns those events until recording stops.
+
+Therefore:
+- UI rendering cannot drop an accepted note;
+- tapping Use cannot commit before the final already-running analyzer block is
+  flushed;
+- event timestamps are sorted before rhythm intervals are built.
+
+The note shown by the recorder still comes from the same stabilized MIDI-note
+state as the captured event.
+
+## UI
+
+No button/layout changes in this revision.
+
+The two `CoreUI: CUIThemeStore: No theme registered with id=0` framework log
+lines are intentionally not being treated as the pitch/recording fault.
+
+
+---
+
+# MichiMetronome 1.8.6 — display-coupled melody recording
+
+## Note display and recording now share one state machine
+
+Previously, the tuner display and the recorder used slightly different pitch
+transition criteria.
+
+That allowed this failure mode:
+
+    UI changes C4 -> D4
+    recorder rejects the transition
+    D4 is visible but never becomes a recorded event
+
+The analyzer now keeps one `displayedMidiNote`.
+
+A new note must be detected in two analyzed frames. Once that stable transition
+is accepted, the same code path simultaneously:
+
+1. changes `displayedMidiNote`;
+2. emits a recording onset;
+3. stores the transition timestamp.
+
+Therefore a note-name change visible in the microphone recording UI cannot occur
+without the corresponding melody event being recorded.
+
+## Same-note repetition
+
+Repeated attacks on the same note still use amplitude attack detection, because
+the displayed note naturally does not change for C4 -> C4.
+
+## Timing
+
+The transition floor remains 60 ms, matching the persisted manual-rhythm floor.
+
+## UI
+
+No button styles or layouts were changed in this revision.
+
+The CoreUI theme-store console line is not being chased with further UI-style
+changes because the previous attempt to do so caused a real UI regression.
+
+
+---
+
 # MichiMetronome 1.8.5 — UI regression correction
 
 This is a targeted correction to 1.8.4, not a rollback.

@@ -137,6 +137,11 @@ struct MetronomeSettings: Codable, Equatable, Sendable {
     static let minimumManualInterval = 0.06
     static let maximumManualInterval = 4.0
 
+    // Safety ceiling only, not a musical limitation.
+    // At the minimum 60 ms event spacing this still permits >8 minutes of
+    // continuous events; at ordinary musical tempos it permits much longer.
+    static let maximumManualEvents = 8_192
+
     var bpm: Double = 120
     var timeSignature: TimeSignature = .fourFour
     var hapticsEnabled: Bool = true
@@ -167,7 +172,9 @@ struct MetronomeSettings: Codable, Equatable, Sendable {
 
         manualIntervals = Array(
             manualIntervals
-                .prefix(32)
+                .prefix(
+                    Self.maximumManualEvents
+                )
                 .map {
                     min(
                         max(

@@ -185,3 +185,34 @@ runtime log.
 
 Native watchOS button styles are used again for recording/tuner controls.
 The 1.8.4 runtime/audio/Crown fixes remain in place.
+
+
+## Melody capture behavior (1.8.6)
+
+During Mic recording, the displayed MIDI note and recorded note-transition event
+now use the same stabilized state. A visible note-name change is committed as a
+recorded melody event at the same time. Same-pitch repeated attacks remain
+amplitude-triggered.
+
+
+## Pitch capture (1.8.7)
+
+Mic/Tuner pitch detection uses a YIN-style fundamental estimator over a rolling
+audio window rather than selecting a raw autocorrelation peak.
+
+Accepted melody events are stored on the analyzer queue before SwiftUI receives
+the display update, so UI scheduling cannot lose recorded notes.
+
+
+## Pitch debug console (1.8.8)
+
+Physical-Watch debug sessions print one `[MichiPitch]` line for every accepted
+note change or same-note re-articulation, including relative time, monotonic
+uptime, note name, MIDI number, frequency, cents and estimator confidence.
+
+
+## Manual pattern capacity (1.8.9)
+
+The legacy 32-event normalization cap has been removed. Manual/Mic patterns now
+support up to 8192 events. Mic commits print captured/saved counts to the Xcode
+console.
